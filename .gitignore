@@ -1,0 +1,6 @@
+/.clasp.json
+/.clasprc.json
+/.release/
+/.porting-publish/
+/.env*
+!/.env.example
