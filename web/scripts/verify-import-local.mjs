@@ -26,8 +26,10 @@ const fixture = (rowNumber, demand, bu = '', type = 'BASE') => ({
 });
 const batch = (sourceRevision, rows) => prepareImport({ sourceRef: 'synthetic:data-input', sourceRevision, rows });
 const sql = await readFile(new URL('../db/migrations/001-import-journal.sql', import.meta.url), 'utf8');
-const totals = `SELECT bu, sum(demand)::text AS total, count(*)::int AS rows, count(demand)::int AS entered
-                FROM daily_activity.demand_events GROUP BY bu ORDER BY bu`;
+const totals = `SELECT business_date::text AS day, dc, bu, shift, activity, unit,
+                       sum(demand)::text AS total, count(*)::int AS rows, count(demand)::int AS entered
+                FROM daily_activity.demand_events
+                GROUP BY business_date, dc, bu, shift, activity, unit ORDER BY business_date, dc, bu, shift, activity, unit`;
 
 await postgres.initialise();
 await postgres.start();
@@ -47,8 +49,9 @@ try {
   assert.equal(conflict.rejected, 1);
   assert.equal(conflict.accepted, 1);
   const groups = (await primary.query(totals)).rows;
-  assert.deepEqual(groups, [{ bu: 'AHI', total: '10', rows: 3, entered: 2 },
-    { bu: 'HCI', total: '0', rows: 1, entered: 1 }]);
+  const scope = { day: '2026-10-31', dc: 'MAKASSAR', shift: '2', activity: 'Move Ke Rak', unit: 'CBM' };
+  assert.deepEqual(groups, [{ ...scope, bu: 'AHI', total: '10', rows: 3, entered: 2 },
+    { ...scope, bu: 'HCI', total: '0', rows: 1, entered: 1 }]);
 
   await primary.query('ALTER TABLE daily_activity.demand_events ADD CONSTRAINT simulated_failure CHECK (source_row <> 10)');
   const interrupted = batch('r3', [fixture(9, 3), fixture(10, 4)]);
@@ -72,7 +75,15 @@ try {
     assert.equal(replay.digest, record.digest);
     await importDataInput(restored, replay);
   }
-  assert.deepEqual((await restored.query(totals)).rows, (await primary.query(totals)).rows);
+  const expectedAfterRetry = [groups[0], { ...scope, bu: 'HCI', total: '7', rows: 3, entered: 3 }];
+  assert.deepEqual((await primary.query(totals)).rows, expectedAfterRetry);
+  assert.deepEqual((await restored.query(totals)).rows, expectedAfterRetry);
+  for (const table of ['import_batches', 'import_rows', 'demand_events']) {
+    const order = { import_batches: 'batch_sequence', import_rows: 'batch_digest, row_number', demand_events: 'source_ref, source_row' };
+    const query = `SELECT to_jsonb(t) - 'imported_at' - 'batch_sequence' AS record
+                   FROM daily_activity.${table} t ORDER BY ${order[table]}`;
+    assert.deepEqual((await restored.query(query)).rows, (await primary.query(query)).rows, table);
+  }
   console.log(JSON.stringify({ groups, firstResult: result, recoveredGroups: (await restored.query(totals)).rows }));
   if (process.argv.includes('--benchmark')) {
     const count = 3717;
