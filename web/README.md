@@ -21,6 +21,19 @@ npm run build
 
 Build menjalankan lint dan pemeriksaan tipe. Pengembangan dan build menggunakan Webpack agar dapat berjalan di Windows saat pembuatan junction dibatasi. Tes fungsi konfigurasi dapat dijalankan tanpa database. Build tidak bergantung pada ketersediaan PostgreSQL. Saat aplikasi berjalan, pemeriksaan koneksi menggunakan `SELECT 1` tanpa mengubah data atau struktur tabel. PostgreSQL terkelola untuk Preview dan Production akan dikonfigurasi terpisah.
 
+## Latihan impor Data Input
+
+Gunakan database PostgreSQL uji yang terpisah dan data sintetis. Simpan ekspor dan laporan yang berisi data operasional di penyimpanan terbatas. Satu berkas JSON berisi `sourceRef` (identitas sumber yang stabil), `sourceRevision` (versi ekspor) dan `rows`. Setiap entri `rows` memuat `rowNumber` asli dari spreadsheet dan `values` sesuai kolom A–O. Gunakan tanggal bisnis `YYYY-MM-DD`, waktu ISO 8601 dengan zona waktu dan string untuk angka yang memerlukan presisi lebih tinggi daripada angka JavaScript. Pertahankan urutan serta posisi baris asli pada ekspor ulang.
+
+```powershell
+node scripts/import-data-input.mjs --check <path-json>
+node scripts/verify-import-local.mjs --benchmark
+```
+
+`--check` memeriksa format tanpa tersambung ke database. Untuk latihan penerapan, tetapkan `DATABASE_URL` untuk database uji, jalankan `db/migrations/001-import-journal.sql` dengan klien PostgreSQL, lalu jalankan `node scripts/import-data-input.mjs --apply <path-json>`. Kode keluar 2 menandakan ada baris tertolak. Pada mode `--apply`, baris valid dan catatan penolakan tersimpan dalam satu transaksi. Jalankan ulang berkas yang sama jika transaksi terputus. Posisi yang sudah terimpor dengan isi berbeda dicatat sebagai konflik untuk ditinjau.
+
+Verifikasi lokal menjalankan PostgreSQL sementara, menguji impor ulang dan rollback, serta membandingkan total setelah pemulihan jurnal ke database kedua. Tahap 04 masih mencakup latihan cadangan PostgreSQL, sumber selain Data Input, rekonsiliasi sampel operasional dan pengujian koneksi Preview.
+
 ## Build Cloudflare Workers
 
 Workers Builds menggunakan root web dan cabang produksi main. Jalankan npm run build:workers untuk memeriksa bundel Workers. Perintah tersebut menjalankan pemeriksaan Next.js, lint dan tipe sebelum membuat bundel. npm run preview:workers membuat Preview Cloudflare, sedangkan npm run deploy:workers menerbitkan ke Production. Gunakan integrasi GitHub untuk menjalankan keduanya dari cabang yang sesuai.
