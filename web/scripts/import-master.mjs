@@ -28,11 +28,11 @@ export function prepareMaster(input) {
     if (map.has(key)) issues.push({ rowNumber, reason });
     else map.set(key, { value, rowNumber });
   }
-  function number(value, rowNumber, reason, limit = Infinity) {
+  function number(value, rowNumber, reason, positive = false) {
     const raw = text(value);
     if (!raw) return null;
     if (!/^\d+(?:\.\d+)?$/.test(raw) || !Number.isFinite(Number(raw)) ||
-        (limit !== Infinity && (Number(raw) <= 0 || Number(raw) > limit))) {
+        (positive && Number(raw) <= 0)) {
       issues.push({ rowNumber, reason });
     }
     return raw;
@@ -58,12 +58,14 @@ export function prepareMaster(input) {
     const rateActivity = text(values[23]);
     if (rateSite || rateActivity) {
       const rate = number(values[25], rowNumber, 'invalid_rate');
+      const fixed = rateActivity === 'Check & Pack';
       add(rates, JSON.stringify([rateSite, rateActivity]),
-        { site: rateSite, activity: rateActivity, rate: rateActivity === 'Check & Pack' ? '50' : rate },
+        { site: rateSite, activity: rateActivity, rate: fixed ? '50' : rate,
+          department: fixed ? 'OUTBOUND' : text(values[22]), unit: fixed ? 'CASE ID' : text(values[24]) },
         rowNumber, 'duplicate_site_activity');
     }
     const hoursSite = upper(values[32]);
-    if (hoursSite) add(hours, hoursSite, number(values[33], rowNumber, 'invalid_work_hours', 24),
+    if (hoursSite) add(hours, hoursSite, number(values[33], rowNumber, 'invalid_work_hours', true),
       rowNumber, 'duplicate_work_hours');
   }
   for (const { value, rowNumber } of rates.values()) {
@@ -106,9 +108,11 @@ export async function applyMaster(client, batch) {
         await client.query('INSERT INTO daily_activity.master_sites (code, work_hours) VALUES ($1, $2)', [site, hours]);
       }
       await client.query("UPDATE daily_activity.site_productivity SET rate = NULL WHERE activity <> 'Check & Pack'");
-      for (const { site, activity, rate } of batch.rates) {
-        await client.query('UPDATE daily_activity.site_productivity SET rate = $3 WHERE site = $1 AND activity = $2',
-          [site, activity, rate]);
+      for (const { site, activity, rate, department, unit } of batch.rates) {
+        await client.query(`
+          UPDATE daily_activity.site_productivity SET rate = $3, department = $4, unit = $5
+          WHERE site = $1 AND activity = $2
+        `, [site, activity, rate, department, unit]);
       }
       await client.query(`
         INSERT INTO daily_activity.master_imports (source_ref, source_revision, digest, source_rows)

@@ -77,6 +77,8 @@ try {
   masterValues[4] = masterValues[23] = 'Loading';
   masterValues[5] = 'CBM';
   masterValues[6] = 'OUTBOUND';
+  masterValues[22] = 'OUTBOUND';
+  masterValues[24] = 'CASE ID';
   masterValues[25] = '6.2';
   const master = prepareMaster({ sourceRef: 'synthetic:master', sourceRevision: 'r1',
     rows: [{ rowNumber: 2, values: masterValues }] });
@@ -98,6 +100,9 @@ try {
   ]);
   assert.deepEqual((await primary.query('SELECT DISTINCT work_hours FROM daily_activity.master_sites')).rows,
     [{ work_hours: null }]);
+  assert.deepEqual((await primary.query(`
+    SELECT site, unit FROM daily_activity.site_productivity WHERE activity = 'Loading' ORDER BY site
+  `)).rows, [{ site: 'MAKASSAR', unit: 'CASE ID' }, { site: 'NEW SITE', unit: 'CBM' }]);
   console.log('Master lulus uji impor ulang, tarif historis, dan pembentukan produktivitas site baru.');
   const historySql = await readFile(new URL('../db/migrations/005-historical-imports.sql', import.meta.url), 'utf8');
   await primary.query(historySql);

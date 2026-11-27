@@ -56,11 +56,10 @@ export async function saveMaster(_: MasterState, form: FormData): Promise<Master
       message = `Standar ${activity} untuk site baru tersimpan.`;
     }
     const { rows } = await pool.query<NonNullable<MasterState['rows']>[number]>(`
-      SELECT s.code AS site, a.name AS activity, p.rate::text, a.unit
+      SELECT s.code AS site, p.activity, p.rate::text, p.unit
       FROM daily_activity.master_sites s
       LEFT JOIN daily_activity.site_productivity p ON p.site = s.code
-      LEFT JOIN daily_activity.master_activities a ON a.name = p.activity
-      ORDER BY s.code, a.department, a.name
+      ORDER BY s.code, p.department, p.activity
     `);
     return { message, failed: false, rows };
   } catch {
