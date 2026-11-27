@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
@@ -8,17 +9,32 @@ import pg from 'pg';
 import { importDataInput, prepareImport } from './import-data-input.mjs';
 import { importPlanSnapshot, preparePlanSnapshot } from './import-plan-snapshot.mjs';
 import { reconcilePlanShifts } from './import-plan-shifts.mjs';
+import { applyMaster, prepareMaster } from './import-master.mjs';
+import { applyHistorical, prepareHistorical } from './import-historical.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'rdc-stage04-'));
 const connection = {
   host: '127.0.0.1', port: Number(process.env.IMPORT_TEST_PORT ?? 55439), user: 'rdc_test',
   password: randomBytes(24).toString('hex'), connectionTimeoutMillis: 5000,
 };
-const postgres = new EmbeddedPostgres({
+const postgresOptions = {
   databaseDir: join(directory, 'cluster'), port: connection.port, user: connection.user,
   password: connection.password, persistent: true, initdbFlags: ['--encoding=UTF8', '--locale=C'],
   postgresFlags: ['-h', '127.0.0.1'],
+};
+const postgres = new EmbeddedPostgres(postgresOptions);
+const physicalBackup = process.argv.includes('--physical-backup');
+const platform = process.platform === 'win32' ? 'windows' : process.platform;
+const pgControl = physicalBackup ? (await import(`@embedded-postgres/${platform}-${process.arch}`)).pg_ctl : null;
+const control = args => new Promise((done, fail) => {
+  const child = spawn(pgControl, args, { stdio: 'ignore', windowsHide: true });
+  child.once('error', fail);
+  child.once('exit', code => code === 0 ? done() : fail(new Error(`pg_ctl ${args.at(-1)} gagal (${code}).`)));
 });
+const startCluster = (dataDir, port) => control([
+  '-D', dataDir, '-l', join(directory, `postgres-${port}.log`), '-o', `-h 127.0.0.1 -p ${port}`, '-w', 'start',
+]);
+const stopCluster = dataDir => control(['-D', dataDir, '-m', 'fast', '-w', 'stop']);
 const primary = new pg.Client({ ...connection, database: 'postgres' });
 const restored = new pg.Client({ ...connection, database: 'stage04_restore' });
 const fixture = (rowNumber, demand, bu = '', type = 'BASE') => ({
@@ -32,13 +48,81 @@ const totals = `SELECT business_date::text AS day, dc, bu, shift, activity, unit
                        sum(demand)::text AS total, count(*)::int AS rows, count(demand)::int AS entered
                 FROM daily_activity.demand_events
                 GROUP BY business_date, dc, bu, shift, activity, unit ORDER BY business_date, dc, bu, shift, activity, unit`;
+const fingerprintSql = `
+  SELECT 'events' AS name, md5(jsonb_agg(to_jsonb(t) ORDER BY source_ref, source_row)::text) AS digest
+    FROM daily_activity.demand_events t
+  UNION ALL SELECT 'plans', md5(jsonb_agg(to_jsonb(t) ORDER BY source_ref, kind, generated_at)::text)
+    FROM daily_activity.plan_snapshots t
+  UNION ALL SELECT 'shifts', md5(jsonb_agg(to_jsonb(t) ORDER BY digest)::text)
+    FROM daily_activity.plan_shift_imports t
+  UNION ALL SELECT 'master', md5(jsonb_agg(to_jsonb(t) ORDER BY site, activity)::text)
+    FROM daily_activity.site_productivity t
+  UNION ALL SELECT 'history', md5(jsonb_agg(to_jsonb(t) ORDER BY batch_digest, source_row)::text)
+    FROM daily_activity.historical_records t
+  ORDER BY name`;
+let fingerprint;
 
 await postgres.initialise();
-await postgres.start();
+if (physicalBackup) await startCluster(postgresOptions.databaseDir, connection.port);
+else await postgres.start();
 try {
   await primary.connect();
   await primary.query(sql);
   await primary.query(sql);
+  const masterSql = await readFile(new URL('../db/migrations/004-master.sql', import.meta.url), 'utf8');
+  await primary.query(masterSql);
+  await primary.query(masterSql);
+  const masterValues = Array(35).fill('');
+  masterValues[0] = masterValues[20] = masterValues[32] = 'MAKASSAR';
+  masterValues[4] = masterValues[23] = 'Loading';
+  masterValues[5] = 'CBM';
+  masterValues[6] = 'OUTBOUND';
+  masterValues[25] = '6.2';
+  const master = prepareMaster({ sourceRef: 'synthetic:master', sourceRevision: 'r1',
+    rows: [{ rowNumber: 2, values: masterValues }] });
+  assert.deepEqual(master.issues, []);
+  assert.deepEqual(await applyMaster(primary, master), { alreadyImported: false });
+  assert.deepEqual(await applyMaster(primary, master), { alreadyImported: true });
+  await primary.query("INSERT INTO daily_activity.master_sites (code) VALUES ('NEW SITE') ON CONFLICT DO NOTHING");
+  await primary.query("INSERT INTO daily_activity.master_sites (code) VALUES ('NEW SITE') ON CONFLICT DO NOTHING");
+  await primary.query("INSERT INTO daily_activity.master_activities VALUES ('Synthetic Activity', 'OUTBOUND', 'CBM', NULL)");
+  assert.deepEqual((await primary.query(`
+    SELECT site, activity, rate::text FROM daily_activity.site_productivity ORDER BY site, activity
+  `)).rows, [
+    { site: 'MAKASSAR', activity: 'Check & Pack', rate: '50' },
+    { site: 'MAKASSAR', activity: 'Loading', rate: '6.2' },
+    { site: 'MAKASSAR', activity: 'Synthetic Activity', rate: null },
+    { site: 'NEW SITE', activity: 'Check & Pack', rate: '50' },
+    { site: 'NEW SITE', activity: 'Loading', rate: '6' },
+    { site: 'NEW SITE', activity: 'Synthetic Activity', rate: null },
+  ]);
+  assert.deepEqual((await primary.query('SELECT DISTINCT work_hours FROM daily_activity.master_sites')).rows,
+    [{ work_hours: null }]);
+  console.log('Master lulus uji impor ulang, tarif historis, dan pembentukan produktivitas site baru.');
+  const historySql = await readFile(new URL('../db/migrations/005-historical-imports.sql', import.meta.url), 'utf8');
+  await primary.query(historySql);
+  await primary.query(historySql);
+  const summaryJson = '{"bu":"AHI","activities":[],"outbound":{"plan":{"cbm":12345678.123456789},"realization":null}}';
+  const summaryInput = { sourceRef: 'synthetic:summary', sourceRevision: 'r1',
+    rows: [{ rowNumber: 2, values: ['2026-11-27', 'MAKASSAR', '2', summaryJson] }] };
+  const summary = prepareHistorical('summary', summaryInput);
+  assert.deepEqual(summary.issues, []);
+  assert.deepEqual(summary.records[0].key, ['2026-11-27', 'MAKASSAR', 'AHI', '2']);
+  assert.deepEqual(await applyHistorical(primary, summary), { alreadyImported: false });
+  assert.deepEqual(await applyHistorical(primary, summary), { alreadyImported: true });
+  const changed = structuredClone(summaryInput);
+  changed.rows[0].values[2] = '1';
+  await assert.rejects(applyHistorical(primary, prepareHistorical('summary', changed)), /isi berbeda/);
+  const queue = prepareHistorical('productivity-queue', { sourceRef: 'synthetic:queue', sourceRevision: 'r1',
+    rows: [{ rowNumber: 2, values: ['req-1', 'MAKASSAR', 'Loading', '', '6.2', 'tester-id',
+      'tester', '2026-11-27T00:00:00Z', 'APPLYING'] }] });
+  assert.deepEqual(queue.issues, []);
+  assert.equal(queue.records[0].payload.previous, null);
+  assert.deepEqual(await applyHistorical(primary, queue), { alreadyImported: false });
+  assert.deepEqual((await primary.query(`
+    SELECT payload->>'summaryJson' AS summary FROM daily_activity.historical_records WHERE batch_digest=$1
+  `, [summary.digest])).rows, [{ summary: summaryJson }]);
+  console.log('Arsip historis lulus uji metadata, impor ulang, konflik revisi dan nilai kosong.');
 
   const planSql = await readFile(new URL('../db/migrations/002-plan-snapshots.sql', import.meta.url), 'utf8');
   await primary.query(planSql);
@@ -160,8 +244,27 @@ try {
     const storage = await primary.query("SELECT sum(pg_total_relation_size(c.oid))::text AS bytes FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='daily_activity' AND c.relkind='r'");
     console.log(JSON.stringify({ benchmark: count, milliseconds, schemaBytes: storage.rows[0].bytes }));
   }
+  if (physicalBackup) fingerprint = (await primary.query(fingerprintSql)).rows;
 } finally {
   await restored.end();
   await primary.end();
-  await postgres.stop();
+  if (physicalBackup) await stopCluster(postgresOptions.databaseDir);
+  else await postgres.stop();
+}
+
+if (fingerprint) {
+  // A complete filesystem copy is consistent only after the source cluster has shut down.
+  const copy = join(directory, 'restored-cluster');
+  await cp(postgresOptions.databaseDir, copy, { recursive: true, errorOnExist: true, force: false });
+  const port = Number(process.env.IMPORT_RESTORE_PORT ?? 55440);
+  const restoredClient = new pg.Client({ ...connection, port, database: 'postgres' });
+  await startCluster(copy, port);
+  try {
+    await restoredClient.connect();
+    assert.deepEqual((await restoredClient.query(fingerprintSql)).rows, fingerprint);
+    console.log('Cadangan fisik PostgreSQL lulus uji pemulihan pada cluster lokal terpisah.');
+  } finally {
+    await restoredClient.end();
+    await stopCluster(copy);
+  }
 }

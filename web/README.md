@@ -47,6 +47,16 @@ Untuk menyimpan snapshot di database latihan, jalankan `db/migrations/002-plan-s
 
 Setelah snapshot tersimpan, jalankan `db/migrations/003-plan-shifts.sql` dan periksa pilihan shift dengan `node scripts/import-plan-shifts.mjs --check inbound <path-json>` atau ganti jenis dengan `outbound`. Ekspor pilihan shift memakai `sourceRef` snapshot, `sourceRevision` ekspor shift, `generatedAt` snapshot, serta baris asli A–L (Inbound) atau A–F (Outbound) dengan tanggal bisnis ISO. Mode `--check` membaca snapshot dari database latihan. Mode `--apply` mengarsipkan baris dan laporan secara idempoten. Kode keluar 2 menandakan ada baris yang perlu ditinjau, termasuk pilihan dari pengiriman yang sudah keluar dari snapshot. Penerbitan pilihan ke aplikasi masih terbuka.
 
+## Latihan Master Setting dan arsip historis
+
+Di database latihan, jalankan migrasi `004-master.sql` lalu periksa ekspor Master dengan `node scripts/import-master.mjs --check <path-json>`. Gunakan format A–AI, nomor baris asli dan desimal dalam string jika perlu. Mode `--apply` memasukkan katalog awal, jam kerja dan tarif site dari sumber dalam satu transaksi. Baris Master asli, termasuk bagian pengguna, tetap berada di arsip database terbatas. Identitas login dipetakan pada tahap akses.
+
+Atur `MASTER_SETTINGS_KEY` dengan kunci unik minimal 24 karakter untuk pengujian lokal atau Preview terisolasi. Buka **Master Setting** dari halaman awal. Site baru mendapat satu baris per aktivitas dengan tarif standar master, termasuk Check & Pack 50 CASE ID per MPP per jam. Tarif yang belum diatur dan jam kerja tetap kosong. Perubahan standar berlaku untuk site berikutnya. Tarif aktif site lama mengikuti workflow persetujuan Prod/MPP/Jam saat tahap tersebut dipindahkan.
+
+Jalankan migrasi `005-historical-imports.sql` untuk arsip Summary JSON dan antrean produktivitas. Periksa dengan `node scripts/import-historical.mjs --check summary <path-json>` atau `--check productivity-queue <path-json>`. Mode `--apply` menyimpan arsip historis yang lulus pemeriksaan.
+
+Jalankan `node scripts/verify-import-local.mjs --physical-backup --benchmark` untuk menguji rangkaian migrasi dan pemulihan salinan cluster PostgreSQL yang telah dihentikan ke cluster lokal terpisah.
+
 ## Build Cloudflare Workers
 
 Workers Builds menggunakan root web dan cabang produksi main. Jalankan npm run build:workers untuk memeriksa bundel Workers. Perintah tersebut menjalankan pemeriksaan Next.js, lint dan tipe sebelum membuat bundel. npm run preview:workers membuat Preview Cloudflare, sedangkan npm run deploy:workers menerbitkan ke Production. Gunakan integrasi GitHub untuk menjalankan keduanya dari cabang yang sesuai.
