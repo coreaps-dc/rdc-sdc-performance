@@ -43,3 +43,16 @@ a {
 
 a:hover { text-decoration: underline; }
 a:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
+
+.master form { display: grid; gap: 0.875rem; margin-bottom: 1rem; }
+.master label { display: grid; gap: 0.25rem; font-weight: 600; }
+.master input, .master select, .master button {
+  width: 100%; padding: 0.625rem; border: 1px solid var(--muted);
+  border-radius: 0.5rem; color: var(--text); background: var(--surface); font: inherit;
+}
+.master button { background: var(--primary); color: var(--surface); font-weight: 600; }
+.master button:disabled { opacity: 0.65; }
+.master :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.master-table { overflow: auto; }
+.master table { width: 100%; border-collapse: collapse; }
+.master th, .master td { border-bottom: 1px solid var(--border); padding: 0.5rem; text-align: left; }

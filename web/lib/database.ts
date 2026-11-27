@@ -4,7 +4,7 @@ import { requireDatabaseUrl } from './database-config';
 
 let pool: Pool | undefined;
 
-export async function checkDatabase(): Promise<void> {
+export function databasePool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString: requireDatabaseUrl(process.env.DATABASE_URL),
@@ -15,5 +15,9 @@ export async function checkDatabase(): Promise<void> {
     });
     pool.on('error', () => console.warn('Koneksi PostgreSQL yang sedang idle terputus.'));
   }
-  await pool.query('SELECT 1');
+  return pool;
+}
+
+export async function checkDatabase(): Promise<void> {
+  await databasePool().query('SELECT 1');
 }

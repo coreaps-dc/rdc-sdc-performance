@@ -5,6 +5,8 @@ export default function Home() {
         <h1 id="page-title">RDC SDC Performance</h1>
         <p>Lingkungan pengembangan untuk perencanaan produktivitas DC.</p>
         <a href="/api/health">Periksa koneksi database</a>
+        {' '}
+        <a href="/master">Master Setting</a>
       </section>
     </main>
   );
