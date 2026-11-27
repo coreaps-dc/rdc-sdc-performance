@@ -15,7 +15,10 @@
     "test": "node --test tests/*.test.mts",
     "build": "npm run lint && npm run typecheck && next build --webpack",
     "start": "next start",
-    "db:local": "node scripts/postgres-local.mjs"
+    "db:local": "node scripts/postgres-local.mjs",
+    "build:workers": "opennextjs-cloudflare build",
+    "preview:workers": "wrangler preview",
+    "deploy:workers": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "next": "16.4.6",
@@ -25,6 +28,7 @@
     "server-only": "0.0.1"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.19",
     "@types/node": "24.19.4",
     "@types/pg": "8.23.1",
     "@types/react": "19.3.3",
@@ -32,6 +36,11 @@
     "embedded-postgres": "18.7.0-beta.19",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.6",
-    "typescript": "5.9.3"
+    "rclone.js": "0.6.6",
+    "typescript": "5.9.3",
+    "wrangler": "4.168.0"
+  },
+  "overrides": {
+    "adm-zip": "0.6.1"
   }
 }

@@ -20,3 +20,9 @@ npm run build
 ```
 
 Build menjalankan lint dan pemeriksaan tipe. Pengembangan dan build menggunakan Webpack agar dapat berjalan di Windows saat pembuatan junction dibatasi. Tes fungsi konfigurasi dapat dijalankan tanpa database. Build tidak bergantung pada ketersediaan PostgreSQL. Saat aplikasi berjalan, pemeriksaan koneksi menggunakan `SELECT 1` tanpa mengubah data atau struktur tabel. PostgreSQL terkelola untuk Preview dan Production akan dikonfigurasi terpisah.
+
+## Build Cloudflare Workers
+
+Workers Builds menggunakan root web dan cabang produksi main. Jalankan npm run build:workers untuk memeriksa bundel Workers. Perintah tersebut menjalankan pemeriksaan Next.js, lint dan tipe sebelum membuat bundel. npm run preview:workers membuat Preview Cloudflare, sedangkan npm run deploy:workers menerbitkan ke Production. Gunakan integrasi GitHub untuk menjalankan keduanya dari cabang yang sesuai.
+
+Simpan DATABASE_URL sebagai secret Cloudflare saat PostgreSQL tersedia. Preview dan Production memakai konfigurasi terpisah. Fondasi dapat dibangun tanpa kredensial dan endpoint kesehatan menampilkan 503 sampai database dikonfigurasi.
