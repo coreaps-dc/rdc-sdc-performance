@@ -26,3 +26,5 @@ Build menjalankan lint dan pemeriksaan tipe. Pengembangan dan build menggunakan 
 Workers Builds menggunakan root web dan cabang produksi main. Jalankan npm run build:workers untuk memeriksa bundel Workers. Perintah tersebut menjalankan pemeriksaan Next.js, lint dan tipe sebelum membuat bundel. npm run preview:workers membuat Preview Cloudflare, sedangkan npm run deploy:workers menerbitkan ke Production. Gunakan integrasi GitHub untuk menjalankan keduanya dari cabang yang sesuai.
 
 Simpan DATABASE_URL sebagai secret Cloudflare saat PostgreSQL tersedia. Preview dan Production memakai konfigurasi terpisah. Fondasi dapat dibangun tanpa kredensial dan endpoint kesehatan menampilkan 503 sampai database dikonfigurasi.
+
+Preview dilindungi oleh HTTP Basic Auth di Worker. Isi secret PREVIEW_ACCESS_TOKEN pada konfigurasi Previews Base sebelum membuat Preview baru. Gunakan username preview dan nilai secret untuk masuk. Tanpa secret, Preview menolak akses dengan HTTP 401. Production tidak memakai gerbang Preview.

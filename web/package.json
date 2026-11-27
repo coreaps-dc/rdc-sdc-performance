@@ -12,7 +12,7 @@
     "dev": "next dev --webpack --hostname 127.0.0.1",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "node --test tests/*.test.mts",
+    "test": "node --test tests/*.test.mts tests/*.test.mjs",
     "build": "npm run lint && npm run typecheck && next build --webpack",
     "start": "next start",
     "db:local": "node scripts/postgres-local.mjs",
