@@ -34,6 +34,17 @@ node scripts/verify-import-local.mjs --benchmark
 
 Verifikasi lokal menjalankan PostgreSQL sementara, menguji impor ulang dan rollback, serta membandingkan total setelah pemulihan jurnal ke database kedua. Jika port lokal `55439` sedang dipakai, pilih port kosong dengan variabel `IMPORT_TEST_PORT`. Tahap 04 masih mencakup latihan cadangan PostgreSQL, sumber selain Data Input, rekonsiliasi sampel operasional dan pengujian koneksi Preview.
 
+## Latihan impor snapshot Plan
+
+Ekspor tab `Plan_Inbound_JSON` atau `Plan_Outbound_JSON` dalam format JSON yang sama seperti Data Input, dengan `values` berisi empat kolom asli (nomor potongan, teks JSON, waktu generasi UTC, jumlah potongan). Gunakan `sourceRef` stabil untuk spreadsheet sumber.
+
+```powershell
+node scripts/import-plan-snapshot.mjs --check inbound <path-json>
+node scripts/import-plan-snapshot.mjs --check outbound <path-json>
+```
+
+Untuk menyimpan snapshot di database latihan, jalankan `db/migrations/002-plan-snapshots.sql` di luar build, tetapkan `DATABASE_URL` untuk database tersebut, lalu ganti `--check` dengan `--apply`. Potongan lengkap tersimpan bersama JSON gabungan. Pengulangan generasi dengan isi sama tidak menulis ulang. Generasi yang sama dengan isi berbeda ditolak. Pilihan shift dan penerbitan snapshot ke aplikasi masih menjadi pekerjaan terpisah.
+
 ## Build Cloudflare Workers
 
 Workers Builds menggunakan root web dan cabang produksi main. Jalankan npm run build:workers untuk memeriksa bundel Workers. Perintah tersebut menjalankan pemeriksaan Next.js, lint dan tipe sebelum membuat bundel. npm run preview:workers membuat Preview Cloudflare, sedangkan npm run deploy:workers menerbitkan ke Production. Gunakan integrasi GitHub untuk menjalankan keduanya dari cabang yang sesuai.

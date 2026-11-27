@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { importDataInput, prepareImport } from './import-data-input.mjs';
+import { importPlanSnapshot, preparePlanSnapshot } from './import-plan-snapshot.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'rdc-stage04-'));
 const connection = {
@@ -37,6 +38,43 @@ try {
   await primary.connect();
   await primary.query(sql);
   await primary.query(sql);
+
+  const planSql = await readFile(new URL('../db/migrations/002-plan-snapshots.sql', import.meta.url), 'utf8');
+  await primary.query(planSql);
+  await primary.query(planSql);
+  const planExport = (kind, records, generatedAt = '2026-11-27T00:00:00.000Z') => {
+    const json = JSON.stringify({
+      schemaVersion: 1, source: kind === 'inbound' ? 'Sheet1' : '2026', generatedAt, records, warnings: {},
+    });
+    return { sourceRef: 'synthetic:plans', sourceRevision: 'r1', rows: [
+      { rowNumber: 2, values: [1, json.slice(0, 40), generatedAt, 2] },
+      { rowNumber: 3, values: [2, json.slice(40), generatedAt, 2] },
+    ] };
+  };
+  for (const kind of ['inbound', 'outbound']) {
+    const records = [{ id: 'sample-1', cbm: 0 }];
+    const input = planExport(kind, records);
+    const missing = { ...input, rows: input.rows.slice(0, 1) };
+    assert.throws(() => preparePlanSnapshot(kind, missing), /tidak lengkap/);
+    const mixed = structuredClone(input);
+    mixed.rows[1].values[2] = '2026-11-28T00:00:00.000Z';
+    assert.throws(() => preparePlanSnapshot(kind, mixed), /generasi berbeda/);
+    const malformed = structuredClone(input);
+    malformed.rows[1].values[1] = '{';
+    assert.throws(() => preparePlanSnapshot(kind, malformed), /JSON gabungan/);
+    assert.throws(() => preparePlanSnapshot(kind, planExport(kind, [...records, ...records])), /identitas pengiriman/);
+    const snapshot = preparePlanSnapshot(kind, input);
+    assert.deepEqual(await importPlanSnapshot(primary, snapshot), { alreadyImported: false });
+    assert.deepEqual(await importPlanSnapshot(primary, snapshot), { alreadyImported: true });
+    await assert.rejects(importPlanSnapshot(primary, preparePlanSnapshot(kind, planExport(kind, []))), /isi berbeda/);
+    const { rows: saved } = await primary.query(
+      'SELECT source_rows, payload FROM daily_activity.plan_snapshots WHERE kind = $1', [kind],
+    );
+    assert.equal(saved.length, 1);
+    assert.deepEqual(saved[0].source_rows, input.rows);
+    assert.deepEqual(saved[0].payload.records, records);
+  }
+  console.log('Snapshot Inbound dan Outbound lulus uji generasi, pengulangan dan konflik.');
 
   const first = batch('r1', [fixture(2, 0), fixture(3, '', 'AHI'), fixture(4, 15, 'AHI'),
     fixture(5, -5, 'AHI', 'REVISION'), fixture(6, 'invalid')]);
