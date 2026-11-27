@@ -23,6 +23,8 @@ Build menjalankan lint dan pemeriksaan tipe. Pengembangan dan build menggunakan 
 
 ## Latihan impor Data Input
 
+Untuk menerapkan semua migrasi secara terkontrol di database latihan, jalankan `node scripts/migrate-database.mjs --apply` dengan `DATABASE_URL` yang menunjuk ke lingkungan tersebut. Perintah ini berjalan di luar build dan mencatat versi, checksum, serta waktu penerapan.
+
 Gunakan database PostgreSQL uji yang terpisah dan data sintetis. Simpan ekspor dan laporan yang berisi data operasional di penyimpanan terbatas. Satu berkas JSON berisi `sourceRef` (identitas sumber yang stabil), `sourceRevision` (versi ekspor) dan `rows`. Setiap entri `rows` memuat `rowNumber` asli dari spreadsheet dan `values` sesuai kolom A–O. Gunakan tanggal bisnis `YYYY-MM-DD`, waktu ISO 8601 dengan zona waktu dan string untuk angka yang memerlukan presisi lebih tinggi daripada angka JavaScript. Pertahankan urutan serta posisi baris asli pada ekspor ulang.
 
 ```powershell
@@ -54,6 +56,8 @@ Di database latihan, jalankan migrasi `004-master.sql` lalu periksa ekspor Maste
 Atur `MASTER_SETTINGS_KEY` dengan kunci unik minimal 24 karakter untuk pengujian lokal atau Preview terisolasi. Buka **Master Setting** dari halaman awal. Site baru mendapat satu baris per aktivitas dengan tarif standar master, termasuk Check & Pack 50 CASE ID per MPP per jam. Tarif yang belum diatur dan jam kerja tetap kosong. Perubahan standar berlaku untuk site berikutnya. Tarif aktif site lama mengikuti workflow persetujuan Prod/MPP/Jam saat tahap tersebut dipindahkan.
 
 Jalankan migrasi `005-historical-imports.sql` untuk arsip Summary JSON dan antrean produktivitas. Periksa dengan `node scripts/import-historical.mjs --check summary <path-json>` atau `--check productivity-queue <path-json>`. Mode `--apply` menyimpan arsip historis yang lulus pemeriksaan.
+
+Migrasi `006-demand-rebuild.sql` menyediakan view `daily_activity.rebuilt_activity_demand` untuk mencocokkan demand per aktivitas dengan Summary JSON. Koreksi historis yang disetujui dapat dicatat di `daily_activity.demand_event_resolutions` dengan nomor baris, alasan dan pemberi persetujuan. View memakai koreksi tersebut sambil mempertahankan event sumber di jurnal. Perhitungan MPP dan metadata Plan/Realisasi historis tetap mengikuti tahap Histori dan Input Harian.
 
 Jalankan `node scripts/verify-import-local.mjs --physical-backup --benchmark` untuk menguji rangkaian migrasi dan pemulihan salinan cluster PostgreSQL yang telah dihentikan ke cluster lokal terpisah.
 

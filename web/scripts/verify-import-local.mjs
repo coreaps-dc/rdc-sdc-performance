@@ -11,6 +11,7 @@ import { importPlanSnapshot, preparePlanSnapshot } from './import-plan-snapshot.
 import { reconcilePlanShifts } from './import-plan-shifts.mjs';
 import { applyMaster, prepareMaster } from './import-master.mjs';
 import { applyHistorical, prepareHistorical } from './import-historical.mjs';
+import { applyDatabaseMigrations } from './migrate-database.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'rdc-stage04-'));
 const connection = {
@@ -67,11 +68,10 @@ if (physicalBackup) await startCluster(postgresOptions.databaseDir, connection.p
 else await postgres.start();
 try {
   await primary.connect();
-  await primary.query(sql);
-  await primary.query(sql);
-  const masterSql = await readFile(new URL('../db/migrations/004-master.sql', import.meta.url), 'utf8');
-  await primary.query(masterSql);
-  await primary.query(masterSql);
+  const migrations = await applyDatabaseMigrations(primary);
+  assert.equal(migrations.length, 6);
+  assert.ok(migrations.every(item => item.status === 'applied'));
+  assert.deepEqual(await applyDatabaseMigrations(primary), migrations.map(item => ({ ...item, status: 'existing' })));
   const masterValues = Array(35).fill('');
   masterValues[0] = masterValues[20] = masterValues[32] = 'MAKASSAR';
   masterValues[4] = masterValues[23] = 'Loading';
@@ -104,9 +104,6 @@ try {
     SELECT site, unit FROM daily_activity.site_productivity WHERE activity = 'Loading' ORDER BY site
   `)).rows, [{ site: 'MAKASSAR', unit: 'CASE ID' }, { site: 'NEW SITE', unit: 'CBM' }]);
   console.log('Master lulus uji impor ulang, tarif historis, dan pembentukan produktivitas site baru.');
-  const historySql = await readFile(new URL('../db/migrations/005-historical-imports.sql', import.meta.url), 'utf8');
-  await primary.query(historySql);
-  await primary.query(historySql);
   const summaryJson = '{"bu":"AHI","activities":[],"outbound":{"plan":{"cbm":12345678.123456789},"realization":null}}';
   const summaryInput = { sourceRef: 'synthetic:summary', sourceRevision: 'r1',
     rows: [{ rowNumber: 2, values: ['2026-11-27', 'MAKASSAR', '2', summaryJson] }] };
@@ -129,12 +126,6 @@ try {
   `, [summary.digest])).rows, [{ summary: summaryJson }]);
   console.log('Arsip historis lulus uji metadata, impor ulang, konflik revisi dan nilai kosong.');
 
-  const planSql = await readFile(new URL('../db/migrations/002-plan-snapshots.sql', import.meta.url), 'utf8');
-  await primary.query(planSql);
-  await primary.query(planSql);
-  const shiftSql = await readFile(new URL('../db/migrations/003-plan-shifts.sql', import.meta.url), 'utf8');
-  await primary.query(shiftSql);
-  await primary.query(shiftSql);
   const planExport = (kind, records, generatedAt = '2026-11-27T00:00:00.000Z') => {
     const json = JSON.stringify({
       schemaVersion: 1, source: kind === 'inbound' ? 'Sheet1' : '2026', generatedAt, records, warnings: {},
@@ -228,6 +219,18 @@ try {
   const expectedAfterRetry = [groups[0], { ...scope, bu: 'HCI', total: '7', rows: 3, entered: 3 }];
   assert.deepEqual((await primary.query(totals)).rows, expectedAfterRetry);
   assert.deepEqual((await restored.query(totals)).rows, expectedAfterRetry);
+  const rebuilt = `SELECT bu, demand::text, demand_entered FROM daily_activity.rebuilt_activity_demand ORDER BY bu`;
+  assert.deepEqual((await primary.query(rebuilt)).rows, [
+    { bu: 'AHI', demand: '10', demand_entered: true }, { bu: 'HCI', demand: '7', demand_entered: true },
+  ]);
+  await primary.query(`
+    INSERT INTO daily_activity.demand_event_resolutions (source_ref, source_row, reason, approved_by)
+    VALUES ('synthetic:data-input', 4, 'synthetic approval', 'tester')
+  `);
+  assert.deepEqual((await primary.query(rebuilt)).rows, [
+    { bu: 'AHI', demand: '-5', demand_entered: true }, { bu: 'HCI', demand: '7', demand_entered: true },
+  ]);
+  assert.deepEqual((await primary.query(totals)).rows, expectedAfterRetry);
   for (const table of ['import_batches', 'import_rows', 'demand_events']) {
     const order = { import_batches: 'batch_sequence', import_rows: 'batch_digest, row_number', demand_events: 'source_ref, source_row' };
     const query = `SELECT to_jsonb(t) - 'imported_at' - 'batch_sequence' AS record
