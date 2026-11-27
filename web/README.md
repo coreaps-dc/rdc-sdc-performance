@@ -32,7 +32,7 @@ node scripts/verify-import-local.mjs --benchmark
 
 `--check` memeriksa format tanpa tersambung ke database. Untuk latihan penerapan, tetapkan `DATABASE_URL` untuk database uji, jalankan `db/migrations/001-import-journal.sql` dengan klien PostgreSQL, lalu jalankan `node scripts/import-data-input.mjs --apply <path-json>`. Kode keluar 2 menandakan ada baris tertolak. Pada mode `--apply`, baris valid dan catatan penolakan tersimpan dalam satu transaksi. Jalankan ulang berkas yang sama jika transaksi terputus. Posisi yang sudah terimpor dengan isi berbeda dicatat sebagai konflik untuk ditinjau.
 
-Verifikasi lokal menjalankan PostgreSQL sementara, menguji impor ulang dan rollback, serta membandingkan total setelah pemulihan jurnal ke database kedua. Tahap 04 masih mencakup latihan cadangan PostgreSQL, sumber selain Data Input, rekonsiliasi sampel operasional dan pengujian koneksi Preview.
+Verifikasi lokal menjalankan PostgreSQL sementara, menguji impor ulang dan rollback, serta membandingkan total setelah pemulihan jurnal ke database kedua. Jika port lokal `55439` sedang dipakai, pilih port kosong dengan variabel `IMPORT_TEST_PORT`. Tahap 04 masih mencakup latihan cadangan PostgreSQL, sumber selain Data Input, rekonsiliasi sampel operasional dan pengujian koneksi Preview.
 
 ## Build Cloudflare Workers
 

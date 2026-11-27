@@ -9,13 +9,13 @@ import { importDataInput, prepareImport } from './import-data-input.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'rdc-stage04-'));
 const connection = {
-  host: '127.0.0.1', port: 55439, user: 'rdc_test',
+  host: '127.0.0.1', port: Number(process.env.IMPORT_TEST_PORT ?? 55439), user: 'rdc_test',
   password: randomBytes(24).toString('hex'), connectionTimeoutMillis: 5000,
 };
 const postgres = new EmbeddedPostgres({
   databaseDir: join(directory, 'cluster'), port: connection.port, user: connection.user,
   password: connection.password, persistent: true, initdbFlags: ['--encoding=UTF8', '--locale=C'],
-  postgresFlags: ['-h', '127.0.0.1'], onLog() {},
+  postgresFlags: ['-h', '127.0.0.1'],
 });
 const primary = new pg.Client({ ...connection, database: 'postgres' });
 const restored = new pg.Client({ ...connection, database: 'stage04_restore' });
