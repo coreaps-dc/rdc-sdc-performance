@@ -7,6 +7,7 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { importDataInput, prepareImport } from './import-data-input.mjs';
 import { importPlanSnapshot, preparePlanSnapshot } from './import-plan-snapshot.mjs';
+import { reconcilePlanShifts } from './import-plan-shifts.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'rdc-stage04-'));
 const connection = {
@@ -42,6 +43,9 @@ try {
   const planSql = await readFile(new URL('../db/migrations/002-plan-snapshots.sql', import.meta.url), 'utf8');
   await primary.query(planSql);
   await primary.query(planSql);
+  const shiftSql = await readFile(new URL('../db/migrations/003-plan-shifts.sql', import.meta.url), 'utf8');
+  await primary.query(shiftSql);
+  await primary.query(shiftSql);
   const planExport = (kind, records, generatedAt = '2026-11-27T00:00:00.000Z') => {
     const json = JSON.stringify({
       schemaVersion: 1, source: kind === 'inbound' ? 'Sheet1' : '2026', generatedAt, records, warnings: {},
@@ -52,7 +56,7 @@ try {
     ] };
   };
   for (const kind of ['inbound', 'outbound']) {
-    const records = [{ id: 'sample-1', cbm: 0 }];
+    const records = [{ id: 'sample-1', dc: 'MAKASSAR', date: '2026-11-27', cbm: 0 }];
     const input = planExport(kind, records);
     const missing = { ...input, rows: input.rows.slice(0, 1) };
     assert.throws(() => preparePlanSnapshot(kind, missing), /tidak lengkap/);
@@ -73,6 +77,25 @@ try {
     assert.equal(saved.length, 1);
     assert.deepEqual(saved[0].source_rows, input.rows);
     assert.deepEqual(saved[0].payload.records, records);
+    const shifts = {
+      sourceRef: snapshot.sourceRef, sourceRevision: 'shift-r1', generatedAt: snapshot.generatedAt,
+      rows: [
+        { rowNumber: 2, values: ['sample-1', 'MAKASSAR', '2026-11-27', '2', 'tester', '',
+          ...(kind === 'inbound' ? [true, '2026-11-28', 'tester', '', 0, ''] : [])] },
+        { rowNumber: 3, values: ['old-record', 'MAKASSAR', '2026-11-26', '1'] },
+      ],
+    };
+    const expected = { total: 2, reconciled: 1, issues: [{ rowNumber: 3, reason: 'missing_snapshot_record' }] };
+    assert.deepEqual(await reconcilePlanShifts(primary, kind, shifts), expected);
+    assert.deepEqual(await reconcilePlanShifts(primary, kind, shifts, true), { ...expected, alreadyImported: false });
+    assert.deepEqual(await reconcilePlanShifts(primary, kind, shifts, true), { ...expected, alreadyImported: true });
+    const wrongScope = structuredClone(shifts);
+    wrongScope.rows[0].values[2] = '2026-11-26';
+    assert.equal((await reconcilePlanShifts(primary, kind, wrongScope)).issues[0].reason, 'snapshot_scope_mismatch');
+    const { rows: staged } = await primary.query(
+      'SELECT source_rows, report FROM daily_activity.plan_shift_imports WHERE kind = $1', [kind],
+    );
+    assert.deepEqual(staged, [{ source_rows: shifts.rows, report: expected }]);
   }
   console.log('Snapshot Inbound dan Outbound lulus uji generasi, pengulangan dan konflik.');
 

@@ -43,7 +43,9 @@ node scripts/import-plan-snapshot.mjs --check inbound <path-json>
 node scripts/import-plan-snapshot.mjs --check outbound <path-json>
 ```
 
-Untuk menyimpan snapshot di database latihan, jalankan `db/migrations/002-plan-snapshots.sql` di luar build, tetapkan `DATABASE_URL` untuk database tersebut, lalu ganti `--check` dengan `--apply`. Potongan lengkap tersimpan bersama JSON gabungan. Pengulangan generasi dengan isi sama tidak menulis ulang. Generasi yang sama dengan isi berbeda ditolak. Pilihan shift dan penerbitan snapshot ke aplikasi masih menjadi pekerjaan terpisah.
+Untuk menyimpan snapshot di database latihan, jalankan `db/migrations/002-plan-snapshots.sql` di luar build, tetapkan `DATABASE_URL` untuk database tersebut, lalu ganti `--check` dengan `--apply`. Potongan lengkap tersimpan bersama JSON gabungan. Pengulangan generasi dengan isi sama tidak menulis ulang. Generasi yang sama dengan isi berbeda ditolak.
+
+Setelah snapshot tersimpan, jalankan `db/migrations/003-plan-shifts.sql` dan periksa pilihan shift dengan `node scripts/import-plan-shifts.mjs --check inbound <path-json>` atau ganti jenis dengan `outbound`. Ekspor pilihan shift memakai `sourceRef` snapshot, `sourceRevision` ekspor shift, `generatedAt` snapshot, serta baris asli A–L (Inbound) atau A–F (Outbound) dengan tanggal bisnis ISO. Mode `--check` membaca snapshot dari database latihan. Mode `--apply` mengarsipkan baris dan laporan secara idempoten. Kode keluar 2 menandakan ada baris yang perlu ditinjau, termasuk pilihan dari pengiriman yang sudah keluar dari snapshot. Penerbitan pilihan ke aplikasi masih terbuka.
 
 ## Build Cloudflare Workers
 
